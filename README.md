@@ -90,8 +90,12 @@ The ONT firmware ships with a carrier-side agent (`/pfrm2.0/bin/cyberiot_init.sh
 
 ## 3. Step-by-Step ONT Configuration (By Hand)
 
-Log into your ONT via Telnet/SSH as `root`.
+> [!IMPORTANT]
+> **Physical connection requirement:** Plug your computer into **LAN Ports 1, 2, or 3** (or connect via the ONT's default Wi-Fi).
+> **Do NOT run these commands while plugged into LAN Port 4.**
+> When Port 4 is converted to bridge mode in Step 3.4, its connection to the stock management bridge is cut. If you run these steps through Port 4, your shell terminates mid-configuration and leaves the bridge incomplete.
 
+Log into your ONT via Telnet/SSH as `root` (default LAN address `192.168.29.1`).
 ### Step 3.1: Read and Record Your ONT's Real WAN MAC
 Run this command and save the output. Throughout this guide, replace `AA:BB:CC:DD:EE:FF` with this exact value:
 
@@ -287,6 +291,9 @@ To access the ONT's status page (`192.168.30.1`) directly from your desktop or p
 ```
 Now, simply open `http://192.168.30.1` in your browser from any PC on your home LAN. Your MikroTik routes directly to the ONT over the single WAN Ethernet cable.
 
+> [!TIP]
+> **Management Fallback:** If `192.168.30.1` ever stops responding (due to a firewall typo or rule flush), you are not locked out. Plug an Ethernet cable into **LAN Ports 1, 2, or 3** with a manual IP (e.g. `192.168.29.10/24`) to regain access to the ONT's stock management plane on `192.168.29.1`.
+
 ---
 
 ### Step 4.5: Immediate IPv6 Resolicit Script (State-Latched Event Hook)
@@ -327,6 +334,12 @@ Paste it onto your MikroTik terminal as a single escaped command:
 ---
 
 ## 5. Making Bridge Mode Persistent Across ONT Reboots
+
+> [!CAUTION]
+> **Root Access Persistence Warning:**
+> On stock firmware, root passwords and temporary Telnet daemons reset on every reboot (`rcS:304` restores `/usr/etc/passwd`).
+> If you rely on custom Dropbear or password restoration scripts to maintain root access, **ensure your Dropbear launch and `/etc/passwd` restoration lines are included in Step 8 of `voipInit` before rebooting**.
+> Because `/flash2/` persists across factory resets, writing a non-functional `voipInit` and rebooting without an active SSH/Telnet server will result in a permanent lockout that the physical pinhole reset button cannot clear.
 
 On embedded ONTs running UBIFS on NAND flash, `/flash2/` is writable and survives reboots. The vendor early-boot hook `/flash2/pfrm2.0/etc/voipInit` is executed by `platformInit3:159` at uptime **~110 seconds**.
 
