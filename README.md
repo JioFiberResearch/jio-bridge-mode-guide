@@ -289,17 +289,40 @@ Now, simply open `http://192.168.30.1` in your browser from any PC on your home 
 
 ---
 
-### Step 4.5: Immediate IPv6 Resolicit Hook
-When the ONT reboots, IPv4 usually binds before the optical GPON link transitions to O5 (Operation State). To avoid waiting for RFC 8415 DHCPv6 backoff timers (which can take 2–3 minutes), add this clean lease script to the IPv4 DHCP client:
+### Step 4.5: Immediate IPv6 Resolicit Script (State-Latched Event Hook)
+When the ONT boots up, IPv4 often binds before the optical GPON link transitions to O5 (Operation State). Under RFC 8415 rules, a DHCPv6 client that receives no reply on its initial Solicit applies exponential backoff: 1s, 2s, 4s, 8s... up to `MAX_SOL_TIMEOUT` (120s), adding a ~134-second delay before IPv6 binds.
+
+To eliminate this delay without running CPU-wasting periodic schedulers, add this event-driven lease script to the IPv4 DHCP client. It uses a global state latch (`:global jioV6Solicited`) to ensure it executes **strictly once per link-up** and never fires on regular DHCPv4 T1 renewal events:
 
 ```routeros
-/ip/dhcp-client/set [find name="jio-v4"] script="
-:if (\$bound = 1) do={
-    :delay 2s;
-    /ipv6/dhcp-client/renew [find comment~\"JioFiber\"];
+# Formatted for readability:
+:global jioV6Solicited;
+:if ($bound = 1) do={
+  :if ($jioV6Solicited != true) do={
+    :if ([:len [/ipv6/dhcp-client/find interface=ether1 status=bound]] = 0) do={
+      :set jioV6Solicited true;
+      /ipv6/dhcp-client renew [find interface=ether1];
+      :log info "Jio DHCPv4 bound: triggered immediate DHCPv6 re-solicitation";
+    } else={
+      :set jioV6Solicited true;
+    };
+  };
+} else={
+  :set jioV6Solicited false;
+  :log warning "Jio DHCP unbound (routing unaffected)";
 }
-"
 ```
+
+Paste it onto your MikroTik terminal as a single escaped command:
+
+```routeros
+/ip/dhcp-client/set [find interface=ether1] script=":global jioV6Solicited; :if (\$bound = 1) do={ :if (\$jioV6Solicited != true) do={ :if ([:len [/ipv6/dhcp-client/find interface=ether1 status=bound]] = 0) do={ :set jioV6Solicited true; /ipv6/dhcp-client renew [find interface=ether1]; :log info \"Jio DHCPv4 bound: triggered immediate DHCPv6 re-solicitation\"; } else={ :set jioV6Solicited true; }; }; } else={ :set jioV6Solicited false; :log warning \"Jio DHCP unbound (routing unaffected)\"; }"
+```
+
+*How it behaves:*
+1. When IPv4 binds (`$bound = 1`) and IPv6 is still unbound, it fires one immediate renew and sets `jioV6Solicited = true`.
+2. During ongoing operations, routine IPv4 lease renewals (T1) see `jioV6Solicited == true` and take **zero action** (0 wakeups/day in steady state).
+3. If the link goes down (`$bound = 0`), the script automatically resets `jioV6Solicited = false`, re-arming the hook for the next link-up.
 
 ---
 
