@@ -413,6 +413,8 @@ cat /proc/pon_phy/DDMI_check_8472
 ```
 
 ### On the MikroTik:
+![MikroTik RouterOS v7 DHCP and DHCPv6-PD Bound Status](image.jpg)
+
 ```routeros
 # Check IPv4 lease:
 /ip/dhcp-client/print detail
